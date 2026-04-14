@@ -22,14 +22,14 @@ fn in_game_url(puuid: &str) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let API_KEY: &str = "RGAPI-1715e66f-1312-4123-8397-e60155c16c9b";
+    let api_key: &str = "RGAPI-1715e66f-1312-4123-8397-e60155c16c9b";
 
     let username: &str = "beanlord";
     let tagline: &str = "bean";
 
     let client = reqwest::Client::new();
     let resp = client.get(account_url(username, tagline))
-        .header("X-Riot-Token", API_KEY)
+        .header("X-Riot-Token", api_key)
         .send()
         .await?;
 
@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("{}#{}: {}", r.game_name, r.tag_line, r.puuid);
 
     let in_game = client.get(in_game_url(r.puuid.as_str()))
-        .header("X-Riot-Token", API_KEY)
+        .header("X-Riot-Token", api_key)
         .send()
         .await?;
 
