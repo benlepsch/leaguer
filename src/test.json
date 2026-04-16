@@ -1,0 +1,41 @@
+{
+    "gameId": 5540713776,
+    "mapId": 30,
+    "gameMode": "CHERRY",
+    "gameType": "MATCHED",
+    "gameQueueConfigId": 1700,
+    "participants": [
+        {
+            "puuid": "NyC6Lz6HvASZX4RsQGUs-Pj1-JAru7tnA1HjI1KGzWLDL91v3lW1pRcT6k8VLSId6fHgf0txBllcJg",
+            "teamId": 100,
+            "spell1Id": 2201,
+            "spell2Id": 2202,
+            "championId": 876,
+            "lastSelectedSkinIndex": 1,
+            "profileIconId": 6041,
+            "riotId": "moester99#NA1",
+            "bot": false,
+            "gameCustomizationObjects": [],
+            "perks": {
+                "perkIds": [
+                    8010
+                ],
+                "perkStyle": 8000,
+                "perkSubStyle": 8400
+            }
+        }, [9 more players here]
+    ],
+    "observers": {
+        "encryptionKey": "bGiUZs0Gkblhyno712wT2Kzl2Sx8M8Eb"
+    },
+    "platformId": "NA1",
+    "bannedChampions": [
+        {
+            "championId": 63,
+            "teamId": 100,
+            "pickTurn": 1
+        }, [etc]
+    ],
+    "gameStartTime": 1776283754643,
+    "gameLength": 1339
+}

@@ -6,7 +6,7 @@ use serde_json;
 use serde::Deserialize;
 
 /* Global Variable */
-const API_KEY: &'static str = "RGAPI-1715e66f-1312-4123-8397-e60155c16c9b";
+const API_KEY: &'static str = "RGAPI-56c4953d-f9ed-4708-91c9-2757ba3d4fda";
 
 
 /* JSON Structs */
@@ -22,15 +22,15 @@ struct AccountResponse {
 #[derive(Debug, Deserialize)]
 struct CurrentGameInfo {
     #[serde(rename = "gameId")]
-    game_id: i32,
+    game_id: i64,
     #[serde(rename = "gameType")]
     game_type: String,
     #[serde(rename = "gameStartTime")]
-    game_start_time: i32,
+    game_start_time: i64,
     #[serde(rename = "mapId")]
-    map_id: i32,
+    map_id: i64,
     #[serde(rename = "gameLength")]
-    game_length: i32,
+    game_length: i64,
     #[serde(rename = "platformId")]
     platform_id: String,
     #[serde(rename = "gameMode")]
@@ -38,7 +38,7 @@ struct CurrentGameInfo {
     #[serde(rename = "bannedChampions")]
     banned_champions: Vec<BannedChampion>,
     #[serde(rename = "gameQueueConfigId")]
-    game_queue_config_id: i32,
+    game_queue_config_id: i64,
     observers: Observer,
     participants: Vec<CurrentGameParticipant>,
 }
@@ -46,11 +46,11 @@ struct CurrentGameInfo {
 #[derive(Debug, Deserialize)]
 struct BannedChampion {
     #[serde(rename = "pickTurn")]
-    pick_turn: i16,
+    pick_turn: i32,
     #[serde(rename = "championId")]
-    champion_id: i32,
+    champion_id: i64,
     #[serde(rename = "teamId")]
-    team_id: i32,
+    team_id: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,18 +62,20 @@ struct Observer {
 #[derive(Debug, Deserialize)]
 struct CurrentGameParticipant {
     #[serde(rename = "championId")]
-    champion_id: i32,
-    perks: Vec<Perks>,
+    champion_id: i64,
+    #[serde(rename = "riotId")]
+    riot_id: String,
+    perks: Perks,
     #[serde(rename = "profileIconId")]
-    profile_icon_id: i32,
+    profile_icon_id: i64,
     bot: bool,
     #[serde(rename = "teamId")]
-    team_id: i32,
+    team_id: i64,
     puuid: String,
     #[serde(rename = "spell1Id")]
-    spell_1_id: i32,
+    spell_1_id: i64,
     #[serde(rename = "spell2Id")]
-    spell_2_id: i32,
+    spell_2_id: i64,
     #[serde(rename = "gameCustomizationObjects")]
     game_customization_objects: Vec<GameCustomizationObject>,
 }
@@ -81,11 +83,11 @@ struct CurrentGameParticipant {
 #[derive(Debug, Deserialize)]
 struct Perks {
     #[serde(rename = "perkIds")]
-    perk_ids: Vec<i32>,
+    perk_ids: Vec<i64>,
     #[serde(rename = "perkStyle")]
-    perk_style: i32,
+    perk_style: i64,
     #[serde(rename = "perkSubStyle")]
-    perk_sub_style: i32,
+    perk_sub_style: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,17 +124,20 @@ async fn check_in_game(puuids: Vec<String>) {
 
             match in_game.status() {
                 reqwest::StatusCode::OK => {
-                    let r: serde_json::Value = serde_json::from_str(&in_game.text().await.unwrap()).unwrap();
+                    let r: CurrentGameInfo = serde_json::from_str(&in_game.text().await.unwrap()).unwrap();
 
-                    println!("{} in {} game", r["riotId"], r["gameMode"]);
+                    for player in r.participants.iter() {
+                        if player.puuid == *p {
+                            println!("{} in {} game", player.riot_id, r.game_mode);
+                            break;
+                        }
+                    }
                 },
                 reqwest::StatusCode::NOT_FOUND => println!("not in game"),
                 _ => {
                     println!("something else happen\n{}", in_game.text().await.unwrap());
                 },
             }
-
-            // println!("{:#?}", in_game.text().await.unwrap());
         }
 
         time::sleep(diff).await;
@@ -163,7 +168,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 puuids.push(r.puuid);
             },
             reqwest::StatusCode::NOT_FOUND => println!("account not found: {}#{}", p.0, p.1),
-            _ => println!("error finding puuid: {}#{}", p.0, p.1),
+            _ => {
+                println!("error finding puuid: {}#{}: {}", p.0, p.1, resp.text().await?);
+            },
         }
     }
 
