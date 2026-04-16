@@ -5,9 +5,11 @@ use chrono::{Utc, Duration};
 use serde_json;
 use serde::Deserialize;
 
-
+/* Global Variable */
 const API_KEY: &'static str = "RGAPI-1715e66f-1312-4123-8397-e60155c16c9b";
 
+
+/* JSON Structs */
 #[derive(Debug, Deserialize)]
 struct AccountResponse {
     puuid: String,
@@ -17,7 +19,84 @@ struct AccountResponse {
     tag_line: String,
 }
 
-fn account_url(username: &str, tag_line: &str) -> String {
+#[derive(Debug, Deserialize)]
+struct CurrentGameInfo {
+    #[serde(rename = "gameId")]
+    game_id: i32,
+    #[serde(rename = "gameType")]
+    game_type: String,
+    #[serde(rename = "gameStartTime")]
+    game_start_time: i32,
+    #[serde(rename = "mapId")]
+    map_id: i32,
+    #[serde(rename = "gameLength")]
+    game_length: i32,
+    #[serde(rename = "platformId")]
+    platform_id: String,
+    #[serde(rename = "gameMode")]
+    game_mode: String,
+    #[serde(rename = "bannedChampions")]
+    banned_champions: Vec<BannedChampion>,
+    #[serde(rename = "gameQueueConfigId")]
+    game_queue_config_id: i32,
+    observers: Observer,
+    participants: Vec<CurrentGameParticipant>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BannedChampion {
+    #[serde(rename = "pickTurn")]
+    pick_turn: i16,
+    #[serde(rename = "championId")]
+    champion_id: i32,
+    #[serde(rename = "teamId")]
+    team_id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct Observer {
+    #[serde(rename = "encryptionKey")]
+    encryption_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentGameParticipant {
+    #[serde(rename = "championId")]
+    champion_id: i32,
+    perks: Vec<Perks>,
+    #[serde(rename = "profileIconId")]
+    profile_icon_id: i32,
+    bot: bool,
+    #[serde(rename = "teamId")]
+    team_id: i32,
+    puuid: String,
+    #[serde(rename = "spell1Id")]
+    spell_1_id: i32,
+    #[serde(rename = "spell2Id")]
+    spell_2_id: i32,
+    #[serde(rename = "gameCustomizationObjects")]
+    game_customization_objects: Vec<GameCustomizationObject>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Perks {
+    #[serde(rename = "perkIds")]
+    perk_ids: Vec<i32>,
+    #[serde(rename = "perkStyle")]
+    perk_style: i32,
+    #[serde(rename = "perkSubStyle")]
+    perk_sub_style: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct GameCustomizationObject {
+    category: String,
+    content: String,
+}
+
+
+/* API Endpoints */
+fn account_url(username: String, tag_line: String) -> String {
     format!("https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{tag_line}")
 }
 
@@ -25,55 +104,70 @@ fn in_game_url(puuid: &str) -> String {
     format!("https://na1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}")
 }
 
-async fn check_in_game(puuid: &str) {
+/* The actual function to check who's in game */
+async fn check_in_game(puuids: Vec<String>) {
     let mut next = Utc::now();
     loop {
-        next = next.checked_add_signed(Duration::seconds(60)).unwrap();
+        next = next.checked_add_signed(Duration::seconds(30)).unwrap();
         let diff = (next - Utc::now()).to_std().unwrap();
 
-        // todo: logic
         let client = reqwest::Client::new();
+        
+        for p in puuids.iter() {
+            let in_game = client.get(in_game_url(p))
+                .header("X-Riot-Token", API_KEY)
+                .send()
+                .await
+                .unwrap();
 
-        let in_game = client.get(in_game_url(puuid))
-            .header("X-Riot-Token", API_KEY)
-            .send()
-            .await
-            .unwrap();
+            match in_game.status() {
+                reqwest::StatusCode::OK => {
+                    let r: serde_json::Value = serde_json::from_str(&in_game.text().await.unwrap()).unwrap();
 
-        match in_game.status() {
-            reqwest::StatusCode::OK => println!("in game"),
-            reqwest::StatusCode::NOT_FOUND => println!("not in game"),
-            _ => println!("something else happen"),
+                    println!("{} in {} game", r["riotId"], r["gameMode"]);
+                },
+                reqwest::StatusCode::NOT_FOUND => println!("not in game"),
+                _ => {
+                    println!("something else happen\n{}", in_game.text().await.unwrap());
+                },
+            }
+
+            // println!("{:#?}", in_game.text().await.unwrap());
         }
-
-    println!("{:#?}", in_game.text().await.unwrap());
 
         time::sleep(diff).await;
     }
 }
 
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let mut players: Vec<(String, String)> = Vec::new();
+    let mut puuids: Vec<String> = Vec::new();
 
-    let username: &str = "beanlord";
-    let tagline: &str = "bean";
+    players.push(("beanlord".to_string(), "bean".to_string()));
+    players.push(("zinkithink".to_string(), "lista".to_string()));
 
     let client = reqwest::Client::new();
-    let resp = client.get(account_url(username, tagline))
-        .header("X-Riot-Token", API_KEY)
-        .send()
-        .await?;
+    
+    for p in players.iter() {
+        let resp = client.get(account_url(p.0.clone(), p.1.clone()))
+            .header("X-Riot-Token", API_KEY)
+            .send()
+            .await?;
 
-    match resp.status() {
-        reqwest::StatusCode::OK => (),
-        reqwest::StatusCode::NOT_FOUND => println!("account not found"),
-        _ => println!("who knows what we do with this"),
+        match resp.status() {
+            reqwest::StatusCode::OK => {
+                let r: AccountResponse = serde_json::from_str(&resp.text().await?).unwrap();
+                println!("{}#{}: {}", r.game_name, r.tag_line, r.puuid);
+                puuids.push(r.puuid);
+            },
+            reqwest::StatusCode::NOT_FOUND => println!("account not found: {}#{}", p.0, p.1),
+            _ => println!("error finding puuid: {}#{}", p.0, p.1),
+        }
     }
 
-    let r: AccountResponse = serde_json::from_str(&resp.text().await?).unwrap();
-    println!("{}#{}: {}", r.game_name, r.tag_line, r.puuid);
-
-    check_in_game(r.puuid.as_str()).await;
+    check_in_game(puuids).await;
 
     Ok(())
 }
