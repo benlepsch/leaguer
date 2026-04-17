@@ -5,6 +5,7 @@ use chrono::{Utc, Duration};
 use serde_json;
 use serde::Deserialize;
 
+
 /* Global Variable */
 const API_KEY: &'static str = "RGAPI-56c4953d-f9ed-4708-91c9-2757ba3d4fda";
 
@@ -95,7 +96,6 @@ struct GameCustomizationObject {
     category: String,
     content: String,
 }
-
 
 /* API Endpoints */
 fn account_url(username: String, tag_line: String) -> String {
