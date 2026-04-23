@@ -8,7 +8,7 @@ use sqlx;
 use sqlx::{sqlite, Sqlite, Pool, Executor};
 
 /* Global Variable */
-const API_KEY: &'static str = "RGAPI-56c4953d-f9ed-4708-91c9-2757ba3d4fda";
+const API_KEY: &'static str = "RGAPI-a5a10c2d-92ef-40a9-8cc5-2a26e3921e07";
 
 
 /* JSON Structs - API Response */
@@ -152,6 +152,8 @@ async fn check_in_game(db: &Pool<Sqlite>) {
                         sqlx::query(format!("UPDATE leaguers SET in_game = 1 WHERE id = {}", p.id).as_str())
                             .execute(db).await.unwrap();
                         println!("{}#{} joined a game", p.name, p.tag_line);
+                    } else {
+                        println!("{}#{} still in game", p.name, p.tag_line);
                     }
                 },
 
@@ -160,6 +162,8 @@ async fn check_in_game(db: &Pool<Sqlite>) {
                         sqlx::query(format!("UPDATE leaguers SET in_game = 0 WHERE id = {}", p.id).as_str())
                             .execute(db).await.unwrap();
                         println!("{}#{} game ended", p.name, p.tag_line);
+                    } else {
+                        println!("{}#{} not in game", p.name, p.tag_line);
                     }
                 },
 
@@ -205,8 +209,6 @@ async fn add_leaguer(username: &String, tag_line: &String, db: &Pool<Sqlite>) ->
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // let mut puuids: Vec<String> = Vec::new();
-
     let opt = sqlite::SqliteConnectOptions::new()
         .filename("test.db")
         .create_if_missing(true);
@@ -225,7 +227,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     add_leaguer(&"beanlord".to_string(), &"bean".to_string(), &connection).await?;
     add_leaguer(&"zinkithink".to_string(), &"lista".to_string(), &connection).await?;
-    // check_in_game(puuids).await;
+    check_in_game(&connection).await;
 
     Ok(())
 }
