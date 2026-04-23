@@ -4,13 +4,15 @@ use tokio::time;
 use chrono::{Utc, Duration};
 use serde_json;
 use serde::Deserialize;
-
+use sqlx;
+use sqlx::{sqlite, Sqlite, Pool, Executor};
 
 /* Global Variable */
 const API_KEY: &'static str = "RGAPI-56c4953d-f9ed-4708-91c9-2757ba3d4fda";
 
 
-/* JSON Structs */
+/* JSON Structs - API Response */
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct AccountResponse {
     puuid: String,
@@ -20,6 +22,7 @@ struct AccountResponse {
     tag_line: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct CurrentGameInfo {
     #[serde(rename = "gameId")]
@@ -44,6 +47,7 @@ struct CurrentGameInfo {
     participants: Vec<CurrentGameParticipant>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct BannedChampion {
     #[serde(rename = "pickTurn")]
@@ -54,12 +58,14 @@ struct BannedChampion {
     team_id: i64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct Observer {
     #[serde(rename = "encryptionKey")]
     encryption_key: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct CurrentGameParticipant {
     #[serde(rename = "championId")]
@@ -81,6 +87,7 @@ struct CurrentGameParticipant {
     game_customization_objects: Vec<GameCustomizationObject>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct Perks {
     #[serde(rename = "perkIds")]
@@ -91,10 +98,21 @@ struct Perks {
     perk_sub_style: i64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct GameCustomizationObject {
     category: String,
     content: String,
+}
+
+/* JSON Structs - Database */
+#[derive(Debug, sqlx::FromRow)]
+struct Leaguer {
+    id: i32,
+    name: String,
+    tag_line: String,
+    puuid: String,
+    in_game: bool,
 }
 
 /* API Endpoints */
@@ -107,33 +125,44 @@ fn in_game_url(puuid: &str) -> String {
 }
 
 /* The actual function to check who's in game */
-async fn check_in_game(puuids: Vec<String>) {
+async fn check_in_game(db: &Pool<Sqlite>) {
     let mut next = Utc::now();
+
     loop {
         next = next.checked_add_signed(Duration::seconds(30)).unwrap();
         let diff = (next - Utc::now()).to_std().unwrap();
 
+        // ----------- pull leaguers from database ---------------
+        let players: Vec<Leaguer> = sqlx::query_as("SELECT * FROM leaguers")
+            .fetch_all(db).await.unwrap();
+
+
+        // ----------- check in game --------------
         let client = reqwest::Client::new();
         
-        for p in puuids.iter() {
-            let in_game = client.get(in_game_url(p))
+        for p in players.iter() {
+            let in_game = client.get(in_game_url(&p.puuid))
                 .header("X-Riot-Token", API_KEY)
                 .send()
-                .await
-                .unwrap();
+                .await.unwrap();
 
             match in_game.status() {
                 reqwest::StatusCode::OK => {
-                    let r: CurrentGameInfo = serde_json::from_str(&in_game.text().await.unwrap()).unwrap();
-
-                    for player in r.participants.iter() {
-                        if player.puuid == *p {
-                            println!("{} in {} game", player.riot_id, r.game_mode);
-                            break;
-                        }
+                    if !p.in_game {
+                        sqlx::query(format!("UPDATE leaguers SET in_game = 1 WHERE id = {}", p.id).as_str())
+                            .execute(db).await.unwrap();
+                        println!("{}#{} joined a game", p.name, p.tag_line);
                     }
                 },
-                reqwest::StatusCode::NOT_FOUND => println!("not in game"),
+
+                reqwest::StatusCode::NOT_FOUND =>  {
+                    if p.in_game {
+                        sqlx::query(format!("UPDATE leaguers SET in_game = 0 WHERE id = {}", p.id).as_str())
+                            .execute(db).await.unwrap();
+                        println!("{}#{} game ended", p.name, p.tag_line);
+                    }
+                },
+
                 _ => {
                     println!("something else happen\n{}", in_game.text().await.unwrap());
                 },
@@ -144,37 +173,59 @@ async fn check_in_game(puuids: Vec<String>) {
     }
 }
 
+async fn add_leaguer(username: &String, tag_line: &String, db: &Pool<Sqlite>) -> Result<(), Box<dyn Error>> {
+    let client = reqwest::Client::new();
+
+    let resp = client.get(account_url(username.clone(), tag_line.clone()))
+        .header("X-Riot-Token", API_KEY)
+        .send()
+        .await?;
+    
+    match resp.status() {
+        reqwest::StatusCode::OK => {
+            let r: AccountResponse = serde_json::from_str(&resp.text().await?).unwrap();
+            println!("{}#{}: {}", r.game_name, r.tag_line, r.puuid);
+
+            sqlx::query("INSERT INTO leaguers (name, tag_line, puuid, in_game) VALUES (?1, ?2, ?3, ?4)")
+                .bind(username)
+                .bind(tag_line)
+                .bind(&r.puuid)
+                .bind(false)
+                .execute(db)
+                .await.unwrap();
+        },
+        reqwest::StatusCode::NOT_FOUND => println!("account not found: {}#{}", username, tag_line),
+        _ => {
+            println!("error finding puuid: {}#{}: {}", username, tag_line, resp.text().await?);
+        },
+    }
+
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let mut players: Vec<(String, String)> = Vec::new();
-    let mut puuids: Vec<String> = Vec::new();
+    // let mut puuids: Vec<String> = Vec::new();
 
-    players.push(("beanlord".to_string(), "bean".to_string()));
-    players.push(("zinkithink".to_string(), "lista".to_string()));
+    let opt = sqlite::SqliteConnectOptions::new()
+        .filename("test.db")
+        .create_if_missing(true);
 
-    let client = reqwest::Client::new();
-    
-    for p in players.iter() {
-        let resp = client.get(account_url(p.0.clone(), p.1.clone()))
-            .header("X-Riot-Token", API_KEY)
-            .send()
-            .await?;
+    let connection: Pool<Sqlite> = sqlite::SqlitePool::connect_with(opt).await.unwrap();
 
-        match resp.status() {
-            reqwest::StatusCode::OK => {
-                let r: AccountResponse = serde_json::from_str(&resp.text().await?).unwrap();
-                println!("{}#{}: {}", r.game_name, r.tag_line, r.puuid);
-                puuids.push(r.puuid);
-            },
-            reqwest::StatusCode::NOT_FOUND => println!("account not found: {}#{}", p.0, p.1),
-            _ => {
-                println!("error finding puuid: {}#{}: {}", p.0, p.1, resp.text().await?);
-            },
-        }
-    }
+    connection.execute("
+        CREATE TABLE IF NOT EXISTS leaguers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            tag_line TEXT,
+            puuid TEXT,
+            in_game BOOL
+        )
+    ").await.unwrap();
 
-    check_in_game(puuids).await;
+    add_leaguer(&"beanlord".to_string(), &"bean".to_string(), &connection).await?;
+    add_leaguer(&"zinkithink".to_string(), &"lista".to_string(), &connection).await?;
+    // check_in_game(puuids).await;
 
     Ok(())
 }
