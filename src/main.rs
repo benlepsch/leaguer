@@ -8,7 +8,7 @@ use sqlx;
 use sqlx::{sqlite, Sqlite, Pool, Executor};
 
 /* Global Variable */
-const API_KEY: &'static str = "RGAPI-a5a10c2d-92ef-40a9-8cc5-2a26e3921e07";
+const API_KEY: &'static str = "not exposing my key hehe";
 
 
 /* JSON Structs - API Response */
